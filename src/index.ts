@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 console.log("Loading...");
 import Logger from "mime-logger";
 import inquirer from "inquirer";
