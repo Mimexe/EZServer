@@ -28,6 +28,9 @@ devDependencies:
   '@types/node':
     specifier: ^20.6.2
     version: 20.6.2
+  pnpm:
+    specifier: ^8.14.1
+    version: 8.14.1
   rimraf:
     specifier: ^5.0.1
     version: 5.0.1
@@ -494,6 +497,12 @@ packages:
     dependencies:
       lru-cache: 10.0.1
       minipass: 7.0.3
+    dev: true
+
+  /pnpm@8.14.1:
+    resolution: {integrity: sha512-hWxOzZfF0/MDVOvDc80y+zcnQpXEidstD2E6HmDwEMrfuxUDbVJfOgbewYl+QhmzxPbTvo8vYvsKNmvuaqp1Mw==}
+    engines: {node: '>=16.14'}
+    hasBin: true
     dev: true
 
   /proxy-from-env@1.1.0:
