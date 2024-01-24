@@ -2,6 +2,7 @@ import Logger from "mime-logger";
 import fs from "fs";
 import axios from "axios";
 import cliProgress from "cli-progress";
+import path from "path";
 export default class DownloadUtils {
   private logger: Logger;
   constructor() {
@@ -160,12 +161,14 @@ export default class DownloadUtils {
       }
       if (!progressBar) throw new Error("Unexpected error");
       progressBar.start(totalLength, 0);
-      const path = `./${server.name}/plugins/${
-        pluginName ||
-        pluginIdOrUrl.split("/")[pluginIdOrUrl.split("/").length - 1]
-      }`;
-      if (path.includes("..")) throw new Error("Invalid path");
-      const writer = fs.createWriteStream(path);
+      const plugpath = path.extname(
+        `./${server.name}/plugins/${
+          pluginName ||
+          pluginIdOrUrl.split("/")[pluginIdOrUrl.split("/").length - 1]
+        }`
+      );
+      if (plugpath.includes("..")) throw new Error("Invalid path");
+      const writer = fs.createWriteStream(plugpath);
       response.data.on("data", (chunk: any) => {
         progressBar.increment(chunk.length);
       });
