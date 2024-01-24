@@ -160,9 +160,12 @@ export default class DownloadUtils {
       }
       if (!progressBar) throw new Error("Unexpected error");
       progressBar.start(totalLength, 0);
+      const sanitizedPluginName = pluginName
+        ? pluginName.replace(/\.\.\//g, "")
+        : "";
       const writer = fs.createWriteStream(
         `./${server.name}/plugins/${
-          pluginName ||
+          sanitizedPluginName ||
           pluginIdOrUrl.split("/")[pluginIdOrUrl.split("/").length - 1]
         }`
       );
