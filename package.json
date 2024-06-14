@@ -2,32 +2,37 @@
   "name": "ezserver",
   "version": "1.0.0",
   "description": "create servers easily",
-  "main": "dist/index.js",
+  "main": "dist/cli.js",
   "scripts": {
-    "start": "pnpm build && node dist/index.js",
+    "start": "pnpm build && node dist/cli.js",
+    "dev": "set DEBUG=ezserver:*&&pnpm start",
     "build": "pnpm clean && tsc",
-    "clean": "rimraf dist",
-    "gpublish": "pnpm build && git add . && git commit -am \"build\" && git push"
+    "clean": "rimraf dist"
   },
   "keywords": [],
   "author": "Mime",
   "license": "MIT",
   "devDependencies": {
     "@types/cli-progress": "^3.11.5",
-    "@types/inquirer": "^9.0.7",
-    "@types/node": "^20.11.30",
-    "pnpm": "^8.15.5",
-    "rimraf": "^5.0.5",
-    "typescript": "^5.4.3"
+    "@types/debug": "^4.1.12",
+    "@types/node": "^20.14.2",
+    "@types/which": "^3.0.4",
+    "@types/winreg": "^1.2.36",
+    "rimraf": "^5.0.7",
+    "typescript": "^5.4.5"
   },
   "bin": {
-    "ezserver": "./dist/index.js"
+    "ezserver": "./dist/cli.js"
   },
   "dependencies": {
-    "axios": "^1.6.8",
+    "axios": "^1.7.2",
     "cli-progress": "^3.12.0",
-    "inquirer": "^9.2.16",
-    "mime-logger": "github:Mimexe/mime-logger"
+    "commander": "^12.1.0",
+    "debug": "^4.3.5",
+    "enquirer": "^2.4.1",
+    "mime-logger": "^1.6.12",
+    "which": "^4.0.0",
+    "winreg": "^1.2.5"
   },
   "type": "module",
   "files": [
