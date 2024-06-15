@@ -24,6 +24,10 @@ async function populateJavaVersions() {
   const isJava = await getJavaPaths()
     .then((res) => {
       for (const javaPath of res) {
+        if (!fs.existsSync(path.join(javaPath, "release"))) {
+          logger.warn("No release file found in Java path: %s", javaPath);
+          continue;
+        }
         const version =
           fs.readFileSync(path.join(javaPath, "release"), "utf8") || "";
         if (!version) {
