@@ -1,11 +1,10 @@
 import Debug from "debug";
 import cp from "child_process";
 import fs from "fs";
-import { downloadFile, getDownloadURL } from "./DownloadUtils.js";
-import { APIUrl, ServerType } from "./types.js";
+import { downloadFile, getDownloadURL } from "./downloadUtils.js";
+import { ServerType } from "./types.js";
 import path from "path";
 import ora, { Ora } from "ora";
-import axios from "axios";
 const debug = Debug("ezserver:cli-core");
 
 export async function create(
