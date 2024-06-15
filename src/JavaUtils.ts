@@ -19,6 +19,8 @@ import * as cp from "child_process";
 import { execSync } from "child_process";
 import which, { Options } from "which";
 import WinReg, { Registry } from "winreg";
+import axios from "axios";
+import { APIUrl } from "./types.js";
 
 const isWindows: boolean = process.platform.indexOf("win") === 0;
 const jdkRegistryKeyPaths: string[] = [
@@ -225,4 +227,33 @@ export default async function getJavaPaths(): Promise<string[]> {
       resolve(res || []);
     });
   });
+}
+
+export async function getJavaForMCVersion(
+  version: string,
+  javaVersions: {
+    version: string;
+    path: string;
+    detectedVersion: number | string;
+  }[]
+): Promise<string> {
+  // Get the versions from mojang
+  const { data: manifestData } = await axios.get(APIUrl.Vanilla);
+  const versions = manifestData.versions;
+  let manifestVersionData = versions.find((v: any) => {
+    if (version === "latest") {
+      return v.id == manifestData.latest.release;
+    }
+    return v.id === version;
+  });
+  if (!manifestVersionData || !manifestVersionData.url)
+    throw new Error("[manifest] Version not found.");
+  const { data: versionData } = await axios.get(manifestVersionData.url);
+  const requiredJavaVersion = versionData.javaVersion?.majorVersion;
+  if (!requiredJavaVersion) throw new Error("[java] Java version not found.");
+  const javaVersion = javaVersions.find(
+    (v) => v.detectedVersion === requiredJavaVersion
+  );
+  if (!javaVersion) throw new Error("[array] Java version not found.");
+  return javaVersion.path;
 }

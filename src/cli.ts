@@ -6,8 +6,10 @@ import path from "path";
 import Logger from "mime-logger";
 import Debug from "debug";
 import { Command } from "commander";
-import { create, CreateOptions, ServerType } from "./index.js";
+import { create, CreateOptions, runServer } from "./core.js";
 import enquirer from "enquirer";
+import { getJavaForMCVersion } from "./JavaUtils.js";
+import { ServerType } from "./types.js";
 const program = new Command();
 const debug = Debug("ezserver:cli");
 const javaVersions: {
@@ -104,13 +106,43 @@ program
         }
         if (!options.dir) options.dir = path.join(process.cwd(), name);
         if (!options.port) options.port = "25565";
+        logger.info("Creating server %s...", name);
+        if (fs.existsSync(options.dir)) {
+          logger.error("Directory already exists: %s", options.dir);
+          const { confirm } = (await enquirer.prompt({
+            type: "confirm",
+            name: "confirm",
+            message: "Do you want to overwrite it?",
+          })) as { confirm: boolean };
+          if (!confirm) {
+            logger.warn("Server creation cancelled.");
+            return;
+          } else {
+            logger.warn("Overwriting directory %s...", options.dir);
+            fs.rmSync(options.dir, { recursive: true });
+          }
+        }
         await create(
           name,
           typeEnum,
           version,
-          Object.assign(options, { javapath: await askJavaPath() })
+          Object.assign(options, { javapath: await askJavaPath(version) })
         );
+        if (options.javapath) {
+          logger.info("Running server jar for first start...");
+          await runServer(options.dir, options.javapath);
+        } else {
+          logger.warn(
+            "You need Java to run the server. Install it and run the server jar."
+          );
+        }
         debug("Server created successfully.");
+        logger.info("Server created successfully.");
+        logger.info(
+          "Run it with EZServer or by running the server jar. (java -jar server.jar)"
+        );
+        logger.info("Server directory: %s", options.dir);
+        logger.info("Connect using: localhost:%s", options.port);
       } catch (e: any) {
         logger.error("An error occurred: %s", e.message);
       }
@@ -132,29 +164,61 @@ program
 
 debug("Finished loading EZServer.");
 program.parse();
-async function askJavaPath(): Promise<string> {
+async function askJavaPath(version: string): Promise<string> {
   if (!javaVersions.length) {
     logger.warn("No Java has been detected. Some features may not work.");
     return "";
   }
   if (javaVersions.length === 1) {
+    logger.warn(
+      "Only one Java version detected. Using Java %s",
+      javaVersions[0].detectedVersion
+    );
     return javaVersions[0].path;
   }
+  const versions = javaVersions
+    .sort((a, b) => {
+      if (typeof a.detectedVersion === "string") return 1;
+      if (typeof b.detectedVersion === "string") return -1;
+      return b.detectedVersion - a.detectedVersion;
+    })
+    .map((java) => ({
+      name: java.path,
+      message:
+        "Java " + java.detectedVersion + ` (${java.version}) - ` + java.path,
+    }));
   const { javaPath } = (await enquirer.prompt({
     type: "select",
     name: "javaPath",
     message: "Select a Java version to use:",
-    choices: javaVersions
-      .sort((a, b) => {
-        if (typeof a.detectedVersion === "string") return 1;
-        if (typeof b.detectedVersion === "string") return -1;
-        return b.detectedVersion - a.detectedVersion;
-      })
-      .map((java) => ({
-        name: java.path,
-        message:
-          "Java " + java.detectedVersion + ` (${java.version}) - ` + java.path,
-      })),
+    initial: versions.length,
+    choices: [
+      ...versions,
+      {
+        name: "detect",
+        message: "Detect for you",
+        hint: "Based on minecraft version",
+      },
+    ],
   })) as { javaPath: string };
+  if (javaPath === "detect") {
+    debug("Detecting Java path...");
+    try {
+      const detectedJava = await getJavaForMCVersion(version, javaVersions);
+      if (!detectedJava) {
+        logger.warn(
+          "No Java version detected for Minecraft version %s",
+          version
+        );
+        return "";
+      }
+      debug("Detected Java %s", detectedJava);
+      return detectedJava;
+    } catch (e: any) {
+      logger.error("An error occurred while detecting java: %s", e.message);
+      process.exit(1);
+    }
+  }
+  debug("Using Java %s", javaPath);
   return javaPath;
 }

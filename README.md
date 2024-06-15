@@ -1,35 +1,19 @@
 # EZServer
 
-Create server easily
+Manage your servers easily from your terminal
 
 ## Installation
 
-**For some reasons, npm is not supported.**
-**If you want to help make it support npm, please make a pull request.**
+**This package is not yet published to npm.**  
+**And it is not yet ready for use.**
+
+_If you want to try it out, you can clone this repository and run the following command in the root directory._
+Note that the package is not yet ready for use and is instable.
 
 ```bash
-yarn global add https://github.com/Mimexe/ezserver.git
+git clone https://github.com/Mimexe/EZServer.git
+cd EZServer
+git checkout develop
+npm install
+npm start
 ```
-
-OR
-
-```bash
-pnpm add -g Mimexe/ezserver
-```
-
-(You need to have nodejs installed)
-
-## Usage
-
-```bash
-ezserver
-```
-
-## Supported server
-
-- Minecraft
-  - Vanilla
-  - Bukkit
-  - Spigot
-  - Paper
-  - Purpur
