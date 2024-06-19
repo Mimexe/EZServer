@@ -29,6 +29,9 @@ importers:
       ora:
         specifier: ^8.0.1
         version: 8.0.1
+      semver:
+        specifier: ^7.6.2
+        version: 7.6.2
       which:
         specifier: ^4.0.0
         version: 4.0.0
@@ -45,6 +48,9 @@ importers:
       '@types/node':
         specifier: ^20.14.2
         version: 20.14.2
+      '@types/semver':
+        specifier: ^7.5.8
+        version: 7.5.8
       '@types/which':
         specifier: ^3.0.4
         version: 3.0.4
@@ -82,6 +88,9 @@ packages:
 
   '@types/node@20.14.2':
     resolution: {integrity: sha512-xyu6WAMVwv6AKFLB+e/7ySZVr/0zLCzOa7rSpq6jNwpqOrUbcACDWC+53d4n2QHOnDou0fbIsg8wZu/sxrnI4Q==}
+
+  '@types/semver@7.5.8':
+    resolution: {integrity: sha512-I8EUhyrgfLrcTkzV3TSsGyl1tSuPrEDzr0yd5m90UgNxQkyDXULk3b6MlQqTCpZpNtWe1K0hzclnZkTcLBe2UQ==}
 
   '@types/which@3.0.4':
     resolution: {integrity: sha512-liyfuo/106JdlgSchJzXEQCVArk0CvevqPote8F8HgWgJ3dRCcTHgJIsLDuee0kxk/mhbInzIZk3QWSZJ8R+2w==}
@@ -405,6 +414,8 @@ snapshots:
   '@types/node@20.14.2':
     dependencies:
       undici-types: 5.26.5
+
+  '@types/semver@7.5.8': {}
 
   '@types/which@3.0.4': {}
 

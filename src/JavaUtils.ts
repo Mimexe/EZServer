@@ -11,13 +11,14 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ * Code modified by the author of this project.
  */
 
 import * as fs from "fs";
 import * as path from "path";
 import * as cp from "child_process";
 import { execSync } from "child_process";
-import which, { Options } from "which";
+import which from "which";
 import WinReg, { Registry } from "winreg";
 import axios from "axios";
 import { APIUrl } from "./types.js";
@@ -236,7 +237,7 @@ export async function getJavaForMCVersion(
     path: string;
     detectedVersion: number | string;
   }[]
-): Promise<string> {
+): Promise<string | null> {
   // Get the versions from mojang
   const { data: manifestData } = await axios.get(APIUrl.Vanilla);
   const versions = manifestData.versions;
@@ -246,14 +247,29 @@ export async function getJavaForMCVersion(
     }
     return v.id === version;
   });
-  if (!manifestVersionData || !manifestVersionData.url)
-    throw new Error("[manifest] Version not found.");
+  if (!manifestVersionData || !manifestVersionData.url) return null;
   const { data: versionData } = await axios.get(manifestVersionData.url);
   const requiredJavaVersion = versionData.javaVersion?.majorVersion;
-  if (!requiredJavaVersion) throw new Error("[java] Java version not found.");
+  if (!requiredJavaVersion) return null;
   const javaVersion = javaVersions.find(
     (v) => v.detectedVersion === requiredJavaVersion
   );
-  if (!javaVersion) throw new Error("[array] Java version not found.");
+  if (!javaVersion) {
+    // Must be a higher version or equal
+    const higherVersions = javaVersions.filter(
+      (v) => v.detectedVersion >= requiredJavaVersion
+    );
+    if (!higherVersions.length) return null;
+    higherVersions.sort((a, b) => {
+      if (
+        typeof a.detectedVersion === "string" ||
+        typeof b.detectedVersion === "string"
+      ) {
+        return 0;
+      }
+      return a.detectedVersion - b.detectedVersion;
+    });
+    return higherVersions[0].path;
+  }
   return javaVersion.path;
 }

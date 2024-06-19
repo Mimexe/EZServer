@@ -6,10 +6,18 @@ import path from "path";
 import Logger from "mime-logger";
 import Debug from "debug";
 import { Command } from "commander";
-import { create, CreateOptions, runServer } from "./core.js";
+import {
+  create,
+  CreateOptions,
+  hasPluginSupport,
+  runServerFirst,
+  downloadPlugins,
+  manageServers,
+} from "./core.js";
 import enquirer from "enquirer";
 import { getJavaForMCVersion } from "./JavaUtils.js";
 import { ServerType } from "./types.js";
+import { DownloadError, DownloadErrorCodes } from "./downloadUtils.js";
 const program = new Command();
 const debug = Debug("ezserver:cli");
 const javaVersions: {
@@ -71,6 +79,7 @@ async function populateJavaVersions() {
     logger.warn("No Java has been detected. Some features may not work.");
   } else {
     debug("Java versions detected: %O", javaVersions);
+    logger.info(`Detected ${javaVersions.length} Java.`);
   }
 }
 
@@ -94,6 +103,12 @@ program
     "Include plugins in the server. Only works with Spigot/Paper."
   )
   .option("-p, --port <port>", "Port to run the server on.")
+  .option(
+    "-b, --use-build",
+    "Use BuildTools to build the server. (ONLY SPIGOT)"
+  )
+  .option("-y, --yes", "Skip all prompts.")
+  .option("-o, --overwrite", "Overwrite the directory if it exists.")
   .action(
     async (
       name: string,
@@ -102,6 +117,7 @@ program
       options: CreateOptions
     ) => {
       try {
+        debug("Preparing to create server...");
         const typeEnum =
           ServerType[type.toUpperCase() as keyof typeof ServerType];
         if (!typeEnum) {
@@ -113,28 +129,92 @@ program
         logger.info("Creating server %s...", name);
         if (fs.existsSync(options.dir)) {
           logger.error("Directory already exists: %s", options.dir);
-          const { confirm } = (await enquirer.prompt({
-            type: "confirm",
-            name: "confirm",
-            message: "Do you want to overwrite it?",
-          })) as { confirm: boolean };
-          if (!confirm) {
-            logger.warn("Server creation cancelled.");
-            return;
+          if (!options.overwrite) {
+            const { confirm } = (await enquirer.prompt({
+              type: "confirm",
+              name: "confirm",
+              message: "Do you want to overwrite it?",
+            })) as { confirm: boolean };
+            if (!confirm) {
+              logger.warn("Server creation cancelled.");
+              return;
+            } else {
+              logger.warn("Overwriting directory %s...", options.dir);
+              fs.rmSync(options.dir, { recursive: true });
+            }
           } else {
             logger.warn("Overwriting directory %s...", options.dir);
             fs.rmSync(options.dir, { recursive: true });
           }
         }
-        await create(
-          name,
-          typeEnum,
-          version,
-          Object.assign(options, { javapath: await askJavaPath(version) })
-        );
+        if (options.yes && !options.useBuild) {
+          options.useBuild = false;
+        }
+        if (typeEnum === ServerType.SPIGOT && options.useBuild == undefined) {
+          const { useBuild } = (await enquirer.prompt({
+            type: "confirm",
+            name: "useBuild",
+            message: "Do you want to use BuildTools (if no, using GetBukkit) ?",
+          })) as { useBuild: boolean };
+          options.useBuild = useBuild;
+        }
+        try {
+          await create(
+            name,
+            typeEnum,
+            version,
+            Object.assign(options, {
+              javapath: await askJavaPath(version, options.yes),
+            })
+          );
+        } catch (e: any) {
+          if (e instanceof DownloadError) {
+            switch (e.code) {
+              case DownloadErrorCodes.VERSION_NOT_FOUND:
+                logger.error("Provied version cannot be found.");
+                break;
+              case DownloadErrorCodes.DESTINATION_NOT_FOUND:
+                logger.error("Destination directory not found.");
+                break;
+              case DownloadErrorCodes.NO_BUILDS:
+                logger.error("No builds found for the version.");
+                break;
+              case DownloadErrorCodes.UNSUPPORTED_TYPE:
+                logger.error("Unsupported server type.");
+                break;
+              default:
+                logger.error("An error occured while creating the server.");
+                logger.error(e.message);
+                break;
+            }
+            return;
+          } else {
+            logger.error("An error occured while creating the server.");
+            logger.error(e.message);
+            return;
+          }
+        }
+        if (options.includePlugins) {
+          if (!hasPluginSupport(typeEnum)) {
+            logger.warn("Plugins are not supported for a %s server.", typeEnum);
+          } else {
+            logger.info("Downloading plugins...");
+            await downloadPlugins(options.dir, version, typeEnum);
+          }
+        }
+        const files = [options.dir + "/run.bat", options.dir + "/run.sh"];
+        for (const file of files) {
+          if (fs.existsSync(file)) {
+            const data = fs.readFileSync(file, "utf8");
+            fs.writeFileSync(
+              file,
+              data.replace(/java/g, path.join(options.javapath, "bin", "java"))
+            );
+          }
+        }
         if (options.javapath) {
           logger.info("Running server jar for first start...");
-          await runServer(options.dir, options.javapath);
+          await runServerFirst(options.dir, options.javapath, typeEnum);
         } else {
           logger.warn(
             "You need Java to run the server. Install it and run the server jar."
@@ -142,9 +222,18 @@ program
         }
         debug("Server created successfully.");
         logger.info("Server created successfully.");
-        logger.info(
-          "Run it with EZServer or by running the server jar. (java -jar server.jar)"
-        );
+        const isWindows: boolean = process.platform.indexOf("win") === 0;
+        if (typeEnum === ServerType.FORGE) {
+          logger.info(
+            `Run it with EZServer or by running the script. (${
+              isWindows ? "run.bat" : "run.sh"
+            })`
+          );
+        } else {
+          logger.info(
+            "Run it with EZServer or by running the server jar. (java -jar server.jar)"
+          );
+        }
         logger.info("Server directory: %s", options.dir);
         logger.info("Connect using: localhost:%s", options.port);
       } catch (e: any) {
@@ -156,11 +245,11 @@ program
 program
   .command("manage")
   .description("Manage an existing server.")
-  .argument("<name>", "Name of the server.")
+  .argument("[name]", "Name of the server.")
   .action((name) => {
     try {
       debug("Managing server %s...", name);
-      throw new Error("Not implemented.");
+      manageServers(name);
     } catch (e: any) {
       logger.error("An error occurred: %s", e.message);
     }
@@ -168,7 +257,10 @@ program
 
 debug("Finished loading EZServer.");
 program.parse();
-async function askJavaPath(version: string): Promise<string> {
+async function askJavaPath(
+  version: string,
+  yes: boolean = false
+): Promise<string> {
   if (!javaVersions.length) {
     logger.warn("No Java has been detected. Some features may not work.");
     return "";
@@ -191,6 +283,25 @@ async function askJavaPath(version: string): Promise<string> {
       message:
         "Java " + java.detectedVersion + ` (${java.version}) - ` + java.path,
     }));
+  if (yes) {
+    debug("Detecting Java path...");
+    try {
+      const detectedJava = await getJavaForMCVersion(version, javaVersions);
+      if (!detectedJava) {
+        logger.warn(
+          "No Java version detected for Minecraft version %s",
+          version
+        );
+        return "";
+      }
+      debug("Detected Java %s", detectedJava);
+      logger.info("Using Java %s", detectedJava);
+      return detectedJava;
+    } catch (e: any) {
+      logger.error("An error occurred while detecting java: %s", e.message);
+      process.exit(1);
+    }
+  }
   const { javaPath } = (await enquirer.prompt({
     type: "select",
     name: "javaPath",
@@ -217,12 +328,13 @@ async function askJavaPath(version: string): Promise<string> {
         return "";
       }
       debug("Detected Java %s", detectedJava);
+      logger.info("Using Java %s", detectedJava);
       return detectedJava;
     } catch (e: any) {
       logger.error("An error occurred while detecting java: %s", e.message);
       process.exit(1);
     }
   }
-  debug("Using Java %s", javaPath);
+  logger.info("Using Java %s", javaPath);
   return javaPath;
 }
