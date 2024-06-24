@@ -20,13 +20,13 @@
   "devDependencies": {
     "@types/cli-progress": "^3.11.5",
     "@types/debug": "^4.1.12",
-    "@types/node": "^20.14.2",
+    "@types/node": "^20.14.8",
     "@types/semver": "^7.5.8",
     "@types/which": "^3.0.4",
     "@types/winreg": "^1.2.36",
     "cross-env": "^7.0.3",
     "rimraf": "^5.0.7",
-    "typescript": "^5.4.5"
+    "typescript": "^5.5.2"
   },
   "bin": {
     "ezserver": "./dist/cli.js"

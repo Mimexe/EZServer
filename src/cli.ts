@@ -13,11 +13,13 @@ import {
   runServerFirst,
   downloadPlugins,
   manageServers,
+  getConfig,
 } from "./core.js";
 import enquirer from "enquirer";
 import { getJavaForMCVersion } from "./JavaUtils.js";
 import { ServerType } from "./types.js";
 import { DownloadError, DownloadErrorCodes } from "./downloadUtils.js";
+import { ConfigError, ConfigErrorCodes } from "./config.js";
 const program = new Command();
 const debug = Debug("ezserver:cli");
 const javaVersions: {
@@ -109,6 +111,8 @@ program
   )
   .option("-y, --yes", "Skip all prompts.")
   .option("-o, --overwrite", "Overwrite the directory if it exists.")
+  .option("-a, --add", "Add the server to the config file.")
+  .option("-s, --skip-first", "Skip running the server for the first time.")
   .action(
     async (
       name: string,
@@ -158,13 +162,30 @@ program
           })) as { useBuild: boolean };
           options.useBuild = useBuild;
         }
+        const askedJavaPath = await askJavaPath(version, options.yes);
+        const server = {
+          name,
+          java: options.javapath || askedJavaPath,
+          path: options.dir,
+          type: typeEnum,
+        };
+        const has = getConfig().checkServer(server);
+        if (options.add || options.yes) {
+          if (has === 1) {
+            logger.error("Server with the same name already exists.");
+            return;
+          } else if (has === 2) {
+            logger.error("Server with the same path already exists.");
+            return;
+          }
+        }
         try {
           await create(
             name,
             typeEnum,
             version,
             Object.assign(options, {
-              javapath: await askJavaPath(version, options.yes),
+              javapath: options.javapath || askedJavaPath,
             })
           );
         } catch (e: any) {
@@ -214,7 +235,11 @@ program
         }
         if (options.javapath) {
           logger.info("Running server jar for first start...");
-          await runServerFirst(options.dir, options.javapath, typeEnum);
+          if (options.skipFirst) {
+            logger.warn("Skipping first start of the server.");
+          } else {
+            await runServerFirst(options.dir, options.javapath, typeEnum);
+          }
         } else {
           logger.warn(
             "You need Java to run the server. Install it and run the server jar."
@@ -236,6 +261,51 @@ program
         }
         logger.info("Server directory: %s", options.dir);
         logger.info("Connect using: localhost:%s", options.port);
+        let addToConfig = false;
+        if (!options.yes) {
+          const { confirm } = await enquirer.prompt<{
+            confirm: boolean;
+          }>({
+            type: "confirm",
+            name: "addToConfig",
+            message: "Do you want to add this server to the config?",
+            initial: true,
+          });
+          addToConfig = confirm;
+        } else {
+          addToConfig = true;
+        }
+        if (addToConfig) {
+          debug("Adding server to config...");
+          const code = getConfig().checkServer(server);
+          if (code === 1) {
+            logger.error("Server with the same name already exists.");
+            return;
+          } else if (code === 2) {
+            logger.error("Server with the same path already exists.");
+            return;
+          }
+          try {
+            getConfig().addServer(server);
+          } catch (e: any) {
+            if (e instanceof ConfigError) {
+              if (e.code == ConfigErrorCodes.SERVER_EXISTS) {
+                logger.error(e.message);
+              } else if (e.code == ConfigErrorCodes.SAVE_ERROR) {
+                logger.error("An error occurred while saving the config file.");
+              } else if (e.code == ConfigErrorCodes.LOAD_ERROR) {
+                logger.error(
+                  "An error occurred while loading the config file."
+                );
+              } else if (e.code == ConfigErrorCodes.SERVER_NOT_FOUND) {
+                logger.error("Server not found.");
+              }
+            } else {
+              logger.error("An error occurred: %s", e.message);
+            }
+          }
+          logger.info("Server added to config.");
+        }
       } catch (e: any) {
         logger.error("An error occurred: %s", e.message);
       }
@@ -257,8 +327,8 @@ program
 
 debug("Finished loading EZServer.");
 program.parse();
-async function askJavaPath(
-  version: string,
+export async function askJavaPath(
+  version?: string,
   yes: boolean = false
 ): Promise<string> {
   if (!javaVersions.length) {
@@ -286,6 +356,7 @@ async function askJavaPath(
   if (yes) {
     debug("Detecting Java path...");
     try {
+      if (!version) throw new Error("No version provided.");
       const detectedJava = await getJavaForMCVersion(version, javaVersions);
       if (!detectedJava) {
         logger.warn(
@@ -302,21 +373,26 @@ async function askJavaPath(
       process.exit(1);
     }
   }
+  const choices: any = [...versions];
+  if (version)
+    choices.push({
+      name: "detect",
+      message: "Detect for you",
+      hint: "Based on minecraft version",
+    });
+  choices.push({
+    name: "custom",
+    message: "Custom path",
+    hint: "Enter the path to the Java Home folder",
+  });
   const { javaPath } = (await enquirer.prompt({
     type: "select",
     name: "javaPath",
     message: "Select a Java version to use:",
     initial: versions.length,
-    choices: [
-      ...versions,
-      {
-        name: "detect",
-        message: "Detect for you",
-        hint: "Based on minecraft version",
-      },
-    ],
+    choices,
   })) as { javaPath: string };
-  if (javaPath === "detect") {
+  if (javaPath === "detect" && version) {
     debug("Detecting Java path...");
     try {
       const detectedJava = await getJavaForMCVersion(version, javaVersions);
@@ -334,6 +410,22 @@ async function askJavaPath(
       logger.error("An error occurred while detecting java: %s", e.message);
       process.exit(1);
     }
+  } else if (javaPath === "custom") {
+    const { customPath }: { customPath: string } = await enquirer.prompt({
+      type: "input",
+      name: "customPath",
+      message: "Enter the path to the Java Home folder:",
+    });
+    if (!customPath) {
+      logger.warn("No Java path provided.");
+      return "";
+    }
+    if (!fs.existsSync(customPath)) {
+      logger.warn("Java path does not exist: %s", customPath);
+      return "";
+    }
+    logger.info("Using Java %s", customPath);
+    return customPath;
   }
   logger.info("Using Java %s", javaPath);
   return javaPath;

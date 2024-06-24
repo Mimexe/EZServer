@@ -1,7 +1,6 @@
 import Debug from "debug";
 import cp from "child_process";
 import fs from "fs";
-import os from "os";
 import {
   downloadFile,
   getDownloadURL,
@@ -14,6 +13,8 @@ import MimeLogger from "mime-logger";
 import axios from "axios";
 import semver from "semver";
 import Enquirer from "enquirer";
+import Config, { ConfigObject, ConfigServer } from "./config.js";
+import { askJavaPath } from "./cli.js";
 const debug = Debug("ezserver:cli-core");
 axios.interceptors.request.use((config) => {
   Debug("ezserver:request")(
@@ -24,6 +25,7 @@ axios.interceptors.request.use((config) => {
   return config;
 });
 const logger = new MimeLogger("Core");
+let configInstance: Config | null = null;
 
 export async function create(
   name: string,
@@ -396,38 +398,13 @@ export async function installForge(dir: string, javaPath: string) {
   });
 }
 
-function checkConfig(): {
-  servers: ConfigServer[];
-} {
-  const configPath = path.resolve(os.homedir(), "ezserver.json");
-  if (!fs.existsSync(configPath)) {
-    logger.warn("Config file not found. Creating one...");
-    fs.writeFileSync(
-      configPath,
-      JSON.stringify(
-        {
-          servers: [],
-        },
-        null,
-        2
-      )
-    );
-  }
-  const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  if (!config.servers) {
-    logger.warn("Servers key not found in config. Creating one...");
-    config.servers = [];
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-  }
-  for (const server of config.servers) {
-    server.type =
-      ServerType[server.type.toUpperCase() as keyof typeof ServerType];
-  }
-  return config;
+export function getConfig() {
+  if (configInstance) return configInstance;
+  else return (configInstance = new Config());
 }
 
 export async function manageServers(name: string) {
-  const config = checkConfig();
+  const config = getConfig().get();
 
   if (!name) {
     const { selectedServer } = await Enquirer.prompt<{
@@ -441,28 +418,183 @@ export async function manageServers(name: string) {
           name: server.name,
           message: `${server.name} - ${server.type} (${server.path})`,
         })),
-        "Add or remove a server",
+        { name: "addremove", message: "Add or remove a server" },
       ],
     });
-    if (selectedServer === "Add or remove a server") {
+    if (selectedServer === "addremove") {
+      const { action } = await Enquirer.prompt<{ action: string }>({
+        type: "select",
+        name: "action",
+        message: "Select an action",
+        choices: ["Add server", "Remove server"],
+      });
+      if (action === "Add server") {
+        const { info, type } = await Enquirer.prompt<{
+          info: { name: string; path: string };
+          type: ServerType;
+        }>([
+          {
+            type: "form",
+            name: "info",
+            message: "Enter server information",
+            choices: [
+              {
+                name: "name",
+                message: "Server name",
+              },
+              {
+                name: "path",
+                message: "Server path",
+              },
+            ],
+          },
+          {
+            type: "select",
+            name: "type",
+            message: "Server type",
+            choices: Object.values(ServerType),
+            result: (value) =>
+              ServerType[value.toUpperCase() as keyof typeof ServerType],
+          },
+        ]);
+        const server: ConfigServer = {
+          name: info.name,
+          path: info.path,
+          java: await askJavaPath(),
+          type,
+        };
+        const check = getConfig().checkServer(server);
+        if (check === 1) {
+          logger.error("Server with the same name already exists.");
+          return;
+        } else if (check === 2) {
+          logger.error("Server with the same path already exists.");
+          return;
+        }
+        getConfig().addServer(server);
+        logger.info("Server added.");
+        return;
+      } else if (action == "Remove server") {
+        // * This will not delete the folder, only remove it from the config
+        const { name } = await Enquirer.prompt<{ name: string }>({
+          type: "select",
+          name: "name",
+          message:
+            "Select a server to remove. This only removes it from the config.",
+          choices: config.servers.map((server: ConfigServer) => server.name),
+        });
+        getConfig().removeServer(name);
+        logger.info("Server removed.");
+        return;
+      }
     } else name = selectedServer;
   }
-  const server = config.servers.find(
-    (server: ConfigServer) => server.name === name
-  );
+  const server = getConfig().getServer({ name });
   debug("Using server %O", server);
   if (!server) {
     logger.error("Server not found.");
     return;
   }
+  const { action } = await Enquirer.prompt<{ action: string }>({
+    type: "select",
+    name: "action",
+    message: "Select an action",
+    choices: [
+      "Start server",
+      "Manage plugins",
+      "Manage properties",
+      "Delete server",
+    ],
+  });
+  if (action === "Start server") {
+    await runServer(server);
+    manageServers(name);
+  } else if (action === "Manage plugins") {
+    // TODO
+  } else if (action === "Manage properties") {
+    // TODO
+  } else if (action === "Delete server") {
+    const { confirm } = await Enquirer.prompt<{ confirm: boolean }>({
+      type: "confirm",
+      name: "confirm",
+      message:
+        "Are you sure you want to delete the server? This action is irreversible.",
+    });
+    if (confirm) {
+      const { confirmPath } = await Enquirer.prompt<{ confirmPath: boolean }>({
+        type: "confirm",
+        name: "confirmPath",
+        message: `The server location is ${server.path}. Are you sure you want to delete it? This action is irreversible.`,
+      });
+      if (!confirmPath) return logger.info("Aborting.");
+      try {
+        if (!fs.existsSync(server.path)) throw new Error("Server not found.");
+        if (server.path.includes("..")) throw new Error("Invalid path.");
+        fs.rmSync(server.path, { recursive: true });
+        getConfig().removeServer(name);
+        logger.info("Server deleted.");
+      } catch (e: any) {
+        logger.error("Failed to delete server. " + e.message);
+      }
+    } else {
+      logger.info("Aborting.");
+    }
+  } else {
+    logger.error("Invalid action.");
+  }
 }
 
-export type ConfigServer = {
-  name: string;
-  path: string;
-  java: string;
-  type: ServerType;
-};
+export async function runServer({
+  java: javaPath,
+  type,
+  path: dir,
+}: ConfigServer) {
+  if (!javaPath) {
+    throw new Error("You need Java to run the server.");
+  }
+  return new Promise<void>((resolve) => {
+    const debugServer = Debug("ezserver:run");
+    const logger2 = new MimeLogger("Server");
+    let cmd: string;
+    let args: string[] = [];
+    if (type === ServerType.FORGE) {
+      const isWindows: boolean = process.platform.indexOf("win") === 0;
+      if (isWindows) {
+        cmd = "run.bat";
+      } else {
+        cmd = "run.sh";
+      }
+    } else {
+      cmd = path.join(javaPath, "bin", "java");
+      args.push("-Xmx4G", "-jar", "server.jar", "nogui");
+    }
+    const child = cp.spawn(cmd, args, {
+      cwd: dir,
+      shell: true,
+    });
+    process.stdin.pipe(child.stdin);
+    debug(child.spawnargs);
+    child.on("spawn", () => {
+      debugServer("Server starting.");
+    });
+    child.stdout.on("data", (data) => {
+      logger2.info(data.toString().trim());
+    });
+    child.stderr.on("data", (data) => {
+      logger2.warn(data.toString().trim());
+    });
+    child.on("exit", () => {
+      debugServer("Server exited.");
+    });
+    child.on("close", (code) => {
+      debugServer("Server exited with code %d", code);
+      resolve();
+    });
+    child.on("error", () => {
+      resolve();
+    });
+  });
+}
 
 export type CreateOptions = {
   yes?: boolean;
@@ -471,7 +603,9 @@ export type CreateOptions = {
   includePlugins?: boolean;
   useBuild?: boolean;
   port: string;
+  add: boolean;
   javapath: string;
+  skipFirst?: boolean;
 };
 
 export type PluginsObject = {
