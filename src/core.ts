@@ -6,14 +6,14 @@ import {
   getDownloadURL,
   getLatestVersion,
 } from "./downloadUtils.js";
-import { ServerType } from "./types.js";
+import { ManageAction, ServerType } from "./types.js";
 import path from "path";
 import ora, { Ora } from "ora";
 import MimeLogger from "mime-logger";
 import axios from "axios";
 import semver from "semver";
 import Enquirer from "enquirer";
-import Config, { ConfigObject, ConfigServer } from "./config.js";
+import Config, { ConfigServer } from "./config.js";
 import { askJavaPath } from "./cli.js";
 const debug = Debug("ezserver:cli-core");
 axios.interceptors.request.use((config) => {
@@ -403,8 +403,13 @@ export function getConfig() {
   else return (configInstance = new Config());
 }
 
-export async function manageServers(name: string) {
+export async function manageServers(name: string, manageAction?: ManageAction) {
   const config = getConfig().get();
+
+  if (!name && manageAction) {
+    logger.error("Server name not provided.");
+    return;
+  }
 
   if (!name) {
     const { selectedServer } = await Enquirer.prompt<{
@@ -495,25 +500,116 @@ export async function manageServers(name: string) {
     logger.error("Server not found.");
     return;
   }
-  const { action } = await Enquirer.prompt<{ action: string }>({
-    type: "select",
-    name: "action",
-    message: "Select an action",
-    choices: [
-      "Start server",
-      "Manage plugins",
-      "Manage properties",
-      "Delete server",
-    ],
-  });
-  if (action === "Start server") {
+  let action: ManageAction;
+  if (!manageAction) {
+    const { action: actionSelected } = await Enquirer.prompt<{
+      action: string;
+    }>({
+      type: "select",
+      name: "action",
+      message: "Select an action",
+      choices: [
+        "Start server",
+        "Manage plugins",
+        "Manage properties",
+        "Delete server",
+      ],
+    });
+    const actionEnum =
+      ManageAction[actionSelected.toUpperCase() as keyof typeof ManageAction];
+    if (!actionEnum) {
+      logger.error("Invalid action.");
+      return;
+    }
+    action = actionEnum;
+  } else {
+    action = manageAction;
+  }
+
+  debug("Selected action %s", action);
+  if (action === ManageAction.START) {
     await runServer(server);
-    manageServers(name);
-  } else if (action === "Manage plugins") {
+  } else if (action === ManageAction.PLUGINS) {
     // TODO
-  } else if (action === "Manage properties") {
-    // TODO
-  } else if (action === "Delete server") {
+  } else if (action === ManageAction.PROPERTIES) {
+    if (!fs.existsSync(path.join(server.path, "server.properties"))) {
+      logger.error(
+        "server.properties not found. Please start the server first."
+      );
+      return;
+    }
+    const properties = await parseProperties(
+      path.join(server.path, "server.properties")
+    );
+    debug("Found %s properties.", Object.keys(properties).length);
+    const { property } = await Enquirer.prompt<{ property: string }>({
+      type: "autocomplete",
+      name: "property",
+      message: "Select a property to edit",
+      choices: Object.keys(properties),
+    });
+    debug("Selected property %s", property);
+    let value = properties[property];
+    // check if the property is a boolean
+    debug("Value: %s", value);
+    if (value == "true" || value == "false") {
+      const { newValue } = await Enquirer.prompt<{ newValue: boolean }>({
+        type: "confirm",
+        name: "newValue",
+        message: "Set the new value",
+        initial: value == "true",
+      });
+      value = newValue.toString();
+    } else if (property == "gamemode" || property == "force-gamemode") {
+      const { gamemode } = await Enquirer.prompt<{ gamemode: string }>({
+        type: "select",
+        name: "gamemode",
+        message: "Select a gamemode",
+        choices: ["survival", "creative", "adventure", "spectator"],
+      });
+      value = gamemode;
+    } else if (property == "difficulty") {
+      const { difficulty } = await Enquirer.prompt<{ difficulty: string }>({
+        type: "select",
+        name: "difficulty",
+        message: "Select a difficulty",
+        choices: ["peaceful", "easy", "normal", "hard"],
+      });
+      value = difficulty;
+    } else if (property == "level-type") {
+      const { levelType } = await Enquirer.prompt<{ levelType: string }>({
+        type: "select",
+        name: "levelType",
+        message: "Select a level type",
+        choices: [
+          "minecraft:normal",
+          "minecraft:flat",
+          "minecraft:large_biomes",
+          "minecraft:amplified",
+          "minecraft:buffet",
+        ],
+      });
+      value = levelType;
+    } else {
+      const { value: newValue } = await Enquirer.prompt<{ value: string }>({
+        type: "input",
+        name: "value",
+        message: "Enter the new value",
+        initial: properties[property],
+      });
+      value = newValue;
+    }
+    properties[property] = value;
+    const newProperties = Object.entries(properties)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n");
+    fs.writeFileSync(
+      path.join(server.path, "server.properties"),
+      newProperties
+    );
+    debug("%s: %s", property, value);
+    logger.info("Property updated.");
+  } else if (action === ManageAction.DELETE) {
     const { confirm } = await Enquirer.prompt<{ confirm: boolean }>({
       type: "confirm",
       name: "confirm",
@@ -542,6 +638,23 @@ export async function manageServers(name: string) {
   } else {
     logger.error("Invalid action.");
   }
+}
+
+async function parseProperties(filePath: string): Promise<ServerProperties> {
+  debug("Parsing properties file %s", filePath);
+  const properties = fs.readFileSync(filePath).toString();
+  const lines = properties.split("\n");
+  debug("%s lines found.", lines.length);
+  const parsed: ServerProperties = {} as ServerProperties;
+  for (const line of lines) {
+    if (!line) continue;
+    if (line.startsWith("#")) continue;
+    let [key, value] = line.split("=");
+    value = value.trim();
+    key = key.trim();
+    if (key && value) parsed[key] = value;
+  }
+  return parsed;
 }
 
 export async function runServer({
@@ -606,6 +719,77 @@ export type CreateOptions = {
   add: boolean;
   javapath: string;
   skipFirst?: boolean;
+};
+
+export type ServerProperties = {
+  "accepts-transfers": boolean;
+  "allow-flight": boolean;
+  "allow-nether": boolean;
+  "broadcast-console-to-ops": boolean;
+  "broadcast-rcon-to-ops": boolean;
+  "bug-report-link": string;
+  debug: boolean;
+  difficulty: "peaceful" | "easy" | "normal" | "hard";
+  "enable-command-block": boolean;
+  "enable-jmx-monitoring": boolean;
+  "enable-query": boolean;
+  "enable-rcon": boolean;
+  "enable-status": boolean;
+  "enforce-secure-profile": boolean;
+  "enforce-whitelist": boolean;
+  "entity-broadcast-range-percentage": number;
+  "force-gamemode": boolean;
+  "function-permission-level": number;
+  gamemode: "survival" | "creative" | "adventure" | "spectator";
+  "generate-structures": boolean;
+  "generator-settings": string;
+  hardcore: boolean;
+  "hide-online-players": boolean;
+  "initial-disabled-packs": string;
+  "initial-enabled-packs": string;
+  "level-name": string;
+  "level-seed": string;
+  "level-type":
+    | "minecraft:normal"
+    | "minecraft:flat"
+    | "minecraft:large_biomes"
+    | "minecraft:amplified"
+    | "minecraft:buffet";
+  "log-ips": boolean;
+  "max-chained-neighbor-updates": number;
+  "max-players": number;
+  "max-tick-time": number;
+  "max-world-size": number;
+  motd: string;
+  "network-compression-threshold": number;
+  "online-mode": boolean;
+  "op-permission-level": number;
+  "player-idle-timeout": number;
+  "prevent-proxy-connections": boolean;
+  pvp: boolean;
+  "query.port": number;
+  "rate-limit": number;
+  "rcon.password": string;
+  "rcon.port": number;
+  "region-file-compression": string;
+  "require-resource-pack": boolean;
+  "resource-pack": string;
+  "resource-pack-id": string;
+  "resource-pack-prompt": string;
+  "resource-pack-sha1": string;
+  "server-ip": string;
+  "server-port": number;
+  "simulation-distance": number;
+  "spawn-animals": boolean;
+  "spawn-monsters": boolean;
+  "spawn-npcs": boolean;
+  "spawn-protection": number;
+  "sync-chunk-writes": boolean;
+  "text-filtering-config": string;
+  "use-native-transport": boolean;
+  "view-distance": number;
+  "white-list": boolean;
+  [key: string]: any;
 };
 
 export type PluginsObject = {

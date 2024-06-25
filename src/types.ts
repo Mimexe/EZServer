@@ -10,3 +10,10 @@ export enum APIUrl {
   Paper = "https://api.papermc.io/v2/projects/paper",
   Forge = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json",
 }
+
+export enum ManageAction {
+  START = "start",
+  PLUGINS = "plugins",
+  PROPERTIES = "properties",
+  DELETE = "delete",
+}

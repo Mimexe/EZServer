@@ -17,7 +17,7 @@ import {
 } from "./core.js";
 import enquirer from "enquirer";
 import { getJavaForMCVersion } from "./JavaUtils.js";
-import { ServerType } from "./types.js";
+import { ManageAction, ServerType } from "./types.js";
 import { DownloadError, DownloadErrorCodes } from "./downloadUtils.js";
 import { ConfigError, ConfigErrorCodes } from "./config.js";
 const program = new Command();
@@ -316,10 +316,17 @@ program
   .command("manage")
   .description("Manage an existing server.")
   .argument("[name]", "Name of the server.")
-  .action((name) => {
+  .argument("[action]", "Action to perform.")
+  .action((name, action) => {
     try {
       debug("Managing server %s...", name);
-      manageServers(name);
+      const actionEnum =
+        ManageAction[action.toUpperCase() as keyof typeof ManageAction];
+      if (!actionEnum) {
+        logger.error("Invalid action: %s", action);
+        return;
+      }
+      manageServers(name, actionEnum);
     } catch (e: any) {
       logger.error("An error occurred: %s", e.message);
     }
