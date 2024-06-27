@@ -530,7 +530,7 @@ export async function manageServers(name: string, manageAction?: ManageAction) {
   if (action === ManageAction.START) {
     await runServer(server);
   } else if (action === ManageAction.PLUGINS) {
-    // TODO
+    logger.info("Currently in development.");
   } else if (action === ManageAction.PROPERTIES) {
     if (!fs.existsSync(path.join(server.path, "server.properties"))) {
       logger.error(
