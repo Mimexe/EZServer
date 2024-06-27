@@ -90,7 +90,7 @@ await populateJavaVersions();
 
 program
   .name("ezserver")
-  .description("A simple Minecraft server manager.")
+  .description("A simple Minecraft ²manager.")
   .version(process.env.npm_package_version || "0.0.0");
 
 program
@@ -267,14 +267,17 @@ program
             confirm: boolean;
           }>({
             type: "confirm",
-            name: "addToConfig",
+            name: "confirm",
             message: "Do you want to add this server to the config?",
             initial: true,
           });
+          console.log(confirm);
+
           addToConfig = confirm;
         } else {
           addToConfig = true;
         }
+        console.log(addToConfig);
         if (addToConfig) {
           debug("Adding server to config...");
           const code = getConfig().checkServer(server);
@@ -317,16 +320,20 @@ program
   .description("Manage an existing server.")
   .argument("[name]", "Name of the server.")
   .argument("[action]", "Action to perform.")
-  .action((name, action) => {
+  .action(async (name, action) => {
     try {
       debug("Managing server %s...", name);
-      const actionEnum =
-        ManageAction[action.toUpperCase() as keyof typeof ManageAction];
-      if (!actionEnum) {
-        logger.error("Invalid action: %s", action);
+      if (action) {
+        const actionEnum =
+          ManageAction[action.toUpperCase() as keyof typeof ManageAction];
+        if (!actionEnum) {
+          logger.error("Invalid action: %s", action);
+          return;
+        }
+        await manageServers(name, actionEnum);
         return;
       }
-      manageServers(name, actionEnum);
+      await manageServers(name);
     } catch (e: any) {
       logger.error("An error occurred: %s", e.message);
     }

@@ -509,10 +509,10 @@ export async function manageServers(name: string, manageAction?: ManageAction) {
       name: "action",
       message: "Select an action",
       choices: [
-        "Start server",
-        "Manage plugins",
-        "Manage properties",
-        "Delete server",
+        { name: "start", message: "Start server" },
+        { name: "plugins", message: "Manage plugins" },
+        { name: "properties", message: "Manage properties" },
+        { name: "delete", message: "Delete server" },
       ],
     });
     const actionEnum =
