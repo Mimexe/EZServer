@@ -7,7 +7,8 @@
     "start": "pnpm build && node dist/cli.js",
     "dev": "cross-env DEBUG=ezserver:* pnpm start",
     "build": "pnpm clean && tsc",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "prepublish": "pnpm build"
   },
   "repository": {
     "type": "git",
