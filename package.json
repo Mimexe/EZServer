@@ -1,6 +1,6 @@
 {
   "name": "mimeservers",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Manage your servers easily from your terminal (aka EZServer but name is taken)",
   "main": "dist/cli.js",
   "scripts": {
