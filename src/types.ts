@@ -13,6 +13,7 @@ export enum APIUrl {
 
 export enum ManageAction {
   START = "start",
+  EDIT = "edit",
   PLUGINS = "plugins",
   PROPERTIES = "properties",
   DELETE = "delete",

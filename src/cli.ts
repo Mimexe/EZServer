@@ -90,8 +90,8 @@ await populateJavaVersions();
 
 program
   .name("ezserver")
-  .description("A simple Minecraft ²manager.")
-  .version(process.env.npm_package_version || "0.0.0");
+  .description("A simple Minecraft manager.")
+  .version("2.2.0");
 
 program
   .command("create")

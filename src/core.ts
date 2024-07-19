@@ -510,6 +510,7 @@ export async function manageServers(name: string, manageAction?: ManageAction) {
       message: "Select an action",
       choices: [
         { name: "start", message: "Start server" },
+        { name: "edit", message: "Edit server" },
         { name: "plugins", message: "Manage plugins" },
         { name: "properties", message: "Manage properties" },
         { name: "delete", message: "Delete server" },
@@ -529,6 +530,64 @@ export async function manageServers(name: string, manageAction?: ManageAction) {
   debug("Selected action %s", action);
   if (action === ManageAction.START) {
     await runServer(server);
+  } else if (action == ManageAction.EDIT) {
+    const { edit } = await Enquirer.prompt<{
+      edit: string;
+    }>([
+      {
+        type: "select",
+        name: "edit",
+        message: "Select a property to edit, that will edit only the config",
+        choices: [
+          { name: "name", message: "Name" },
+          { name: "java", message: "Java" },
+          { name: "path", message: "Path" },
+          { name: "type", message: "Type" },
+        ],
+      },
+    ]);
+    let value;
+    if (!(edit in server)) return;
+    if (edit == "java") {
+      value = await askJavaPath();
+      if (!value) {
+        logger.error("Not specified");
+        return;
+      }
+    } else if (edit == "type") {
+      const { value: value2 } = await Enquirer.prompt<{
+        value: string;
+      }>([
+        {
+          type: "select",
+          name: "value",
+          message: "Enter the type",
+          choices: Object.values(ServerType),
+          result: (value) =>
+            ServerType[value.toUpperCase() as keyof typeof ServerType],
+        },
+      ]);
+      value = value2;
+    } else {
+      const { value: value2 } = await Enquirer.prompt<{
+        value: string;
+      }>([
+        {
+          type: "input",
+          name: "value",
+          message: "Enter the value",
+        },
+      ]);
+      value = value2;
+    }
+    const newServer = Object.assign({}, server);
+    newServer[edit as keyof ConfigServer] = value as any;
+    try {
+      getConfig().editServer(server, newServer);
+      logger.info("Successfully edited server");
+    } catch (e: any) {
+      logger.error("An error occured: " + e.message);
+    }
   } else if (action === ManageAction.PLUGINS) {
     logger.info("Currently in development.");
   } else if (action === ManageAction.PROPERTIES) {

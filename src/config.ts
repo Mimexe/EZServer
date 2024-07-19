@@ -63,6 +63,27 @@ export default class Config {
     this.save();
   }
 
+  editServer(oldServer: ConfigServer, newServer: ConfigServer) {
+    const server = this.config.servers.find((s) => s === oldServer);
+    debug("old server %O", server);
+    if (!this.hasServer(oldServer))
+      throw new ConfigError(
+        "Server not found",
+        ConfigErrorCodes.SERVER_NOT_FOUND
+      );
+    for (const key in server) {
+      server[key as keyof ConfigServer] = newServer[
+        key as keyof ConfigServer
+      ] as any;
+    }
+    debug("new server %O", server);
+    this.save();
+  }
+
+  hasServer(server: ConfigServer) {
+    return this.config.servers.find((server2) => server2 === server);
+  }
+
   removeServer(name: string) {
     debug("Removing server %s", name);
     this.config.servers = this.config.servers.filter((s) => s.name !== name);
